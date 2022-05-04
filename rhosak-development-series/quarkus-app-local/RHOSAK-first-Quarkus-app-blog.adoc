@@ -1,0 +1,151 @@
+# Quarkus App Local
+
+In this series of blogs we will walk you through building your first microservice that uses Apache Kafka for inter-service communication, messaging and event-streaming.
+We will walk you through the steps needed to build a truly hybrid cloud architecture using modern technologies like:
+
+* Quarkus: a Java framework tailored for deployment on Kubernetes.
+* Apache Kafka, using both local Kafka deployments for development work, and fully managed Kafka cloud services.
+* Kubernetes & OpenShift to deploy your application to a container platform and unleash the power of a hybrid cloud architecture.
+* Prometheus and Grafana: providing monitoring capabilities and metrics to get insight in your microservice and Kafka platform
+
+In this first episode, you will create a Quarkus microservice that produces messages to an Apache Kafka cluster running in a container on your local development machine.
+The pre-requisits for this blog are:
+
+* An installed JVM: Java version 11 or higher is preferred.
+* Apache Maven: in this blog we will be using version 3.8.5
+* Docker or Podman container runtime
+* The `docker-compose` or `podman-compose` tool
+
+When you've finished this blog, you will have a running microservice on your local machine, sending messages to Apache Kafka running in a container on your machine.
+
+
+## Creating the Quarkus microservice skeleton
+
+We will start by creating the Quarkus microservice skeleton project that will serve as the base for our Quarkus Kafka producer.
+To create your Quarkus project, execute the following command in a terminal:
+
+```
+mvn io.quarkus.platform:quarkus-maven-plugin:2.8.2.Final:create \
+    -DprojectGroupId=org.acme \
+    -DprojectArtifactId=my-first-kafka-service \
+    -Dextensions="resteasy-reactive,smallrye-reactive-messaging-kafka"
+```
+
+Optionally you can also use the https://quarkus.io/guides/cli-tooling[Quarkus CLI] to bootstrap your Quarkus project:
+
+```
+quarkus create app org.acme:my-first-kafka-service --extension=resteasy-reactive,smallrye-reactive-messaging-kafka
+```
+
+Navigate into the project directory that was just created:
+```
+cd my-first-kafka-service
+```
+
+Inspect the project. The project is a simple Maven project, including a Maven `pom.xml` and a precreated Maven project directory structure.
+The project also contains 2 example source files:
+
+* GreetingResource.java: Provides a `/hello` REST endpoint, that, upon accessed via an HTTP `GET` will return the text `Hello from RESTEasy Reactive`.
+* MyReactiveMessagingApplication: Provides an example that emits words to a `Channel` (in our case this will be a Kafka topic) and will send those words to the `System.out` (terminal) in uppercase.
+
+We will start this application in Quarkus _dev-mode_
+
+NOTE: Quarkus contains a concept called https://quarkus.io/guides/dev-services[_Dev Services_]. These _Dev Services_ will start up a https://www.testcontainers.org/[testcontainer]-based services for certain extensions if the extension has not been configured.
+In our case this would start up a Kafka testcontainer in Docker. Since we will be running our own local Kafka cluster in Docker/Podman using Strimzi, we don't need a Kafka testcontainer.
+We can disable the testcontainer by configuring the `kafka.bootstrap.servers` property in the `application.properties` file our applications.
+
+. Add the following configuration to the applications `src/main/resources/application.properties` file. This will point our application to the Kafka bootstrap server that we will provision shortly. It also disables the Quarkus Kafka testcontainer:
+```
+kafka.bootstrap.servers=localhost:9092
+```
+. Start the application in Quarkus *dev-mode* by executing the following command:
+```
+mvn clean quarkus:dev
+```
+
+You will get a number of _warnings_ and _errors_ when the application starts due the fact that there is no Kafka cluster available yet for your application to connect to.
+These warnings and errors will look somewhat like this:
+
+* _Connection to node -1 (localhost/127.0.0.1:9092) could not be established. Broker may not be available._
+* _Bootstrap broker localhost:9092 (id: -1 rack: null) disconnected_
+* _Message was not sent to Kafka topic 'words'_
+
+You can ignore these warnings and errors for now, they will be fixed when we connect to a Kafka instance.
+
+You will also see the text
+```
+Tests paused
+Press [r] to resume testing, [o] Toggle test output, [:] for the terminal, [h] for more options>
+```
+
+in your terminal. This is part Quarkus' continuous testing feature. You can ignore this for now.
+
+You can test that your application's REST endpoint is working correctly by:
+* navigating to the following URL in your browser of choice: http://localhost:8080/hello
+or
+* executing the following `cURL` command in your terminal: curl http://localhost:8080/hello
+
+You should see the text: "Hello from RESTEasy Reactive".
+
+
+## Running a local Strimzi Kafka container
+
+There are multiple ways to get access to an Apache Kafka cluster. You can run it locally on your development system, you can run it locally in a container, you can run it on a Kubernetes or OpenShift platform via https://strimzi.io/[Strimzi], or you can get access to a managed Kafka cloud service like https://www.redhat.com/kafka[Red Hat OpenShift Streams for Apache Kafka].
+In this blog we will first focus on the developer's workflow and start with running a Kafka instance locally in a container using the https://strimzio.io[Strimzi] container image. You can use either a Docker or https://podman.io/[Podman] as your container runtime.
+
+Make sure you have your container runtime running and available.
+
+We will run the Strimzi container images using `docker-compose` (or `podman-compose` if you're using Podman).
+
+. Retrieve the `docker-compose` file for Strimzi by cloning the following Git repository:
++
+```
+git clone https://github.com/scholzj/strimzi-compose-up.git
+```
+. Navigate into the cloned directory and start the Strimzi-based Kafka containers (the Kafka broker and ZooKeeper containers) with the following command:
++
+```
+cd strimzi-compose-up
+docker-compose up
+```
+
+After the Strimzi Kafka images have been pulled from the container registry, and the single broker Kafka cluster has started, your Kafka instance will be available at `localhost:9092`.
+
+You will now see your application starting to produce a lot of warning outputs on the terminal while your Kafka environment is booting up, like:
+* _Bootstrap broker localhost:9092 (id: -1 rack: null) disconnected_
+* _Error while fetching metadata with correlation id 97 : {words=LEADER_NOT_AVAILABLE}_
+
+Once your Kafka instance is fully up and running, these warnings will stop, your application will connect to the Kafka cluster and you will see the following output in your terminal
+```
+2022-05-04 13:03:06,331 INFO  [io.sma.rea.mes.kafka] (vert.x-eventloop-thread-3) SRMSG18256: Initialize record store for topic-partition 'words-0' at position -1.
+>> SMALLRYE
+>> REACTIVE
+>> MESSAGE
+>> HELLO
+```
+
+These are the messages that are send from your `MyReactiveMessagingApplication` Java bean's `onStart` method to the `words` topic in your Kafka cluster, consumer by the `toUpperCase` method in the same Java class, and finally sent to the terminal via the `sink` method in the same class.
+
+# Inspecting your Kafka topic
+To verify that your application has send messages to the `words` topic in your local Kafka instance, we can use the Kafka tooling in the Strimzi image to:
+* List the topics on the Kafka cluster, and verify the `words` topic exists.
+* Read messages from the `words` topic to verify that our application has sent the messages.
+
+We can do this verification using the Kafka binary scripts that are included in the Strimzi image. We can use docker-compose/podman-compose to execute these scripts.
+
+. Navigate to the directory in which you've stored your Strimzi `docker-compose.yml` file.
+. To list the topics, execute the following command. You should see the `words` topic listed in the output:
++
+```
+docker-compose exec kafka bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+. To consume the messages from the topic, execute the following command. You should see the same words as you saw in the output of your application, but this time not fully in upper-case:
+```
+docker-compose exec kafka bin/kafka-console-consumer.sh --topic words --from-beginning --bootstrap-server localhost:9092
+```
+
+## Conclusion
+
+In this blog you have learned how you can create a simple Quarkus application that produces messages to, and consumes messages from, a https://strimzi.io[Strimzi] based local Kafka instance running in a container.
+You've seen how you can use Docker/Podman to create the Kafka instance to provide the Kafka service to your Quarkus application, and how you can use the tooling inside the Strimzi container to interact with the Kafka instance and verify that your application is working correctly.
+In a next episode in this series, we will add our own Kafka message producer and consumer logic to our Quarkus application, and connect our application to a Red Hat's managed Kafka Cloud Service: https://console.redhat.com/application-services/streams/[Red Hat OpenShift Streams for Apache Kafka]

@@ -78,7 +78,7 @@ Tests paused
 Press [r] to resume testing, [o] Toggle test output, [:] for the terminal, [h] for more options>
 ```
 
-in your terminal. This is part Quarkus' continuous testing feature. You can ignore this for now.
+in your terminal. This is part of Quarkus' continuous testing feature. You can ignore this for now.
 
 You can test that your application's REST endpoint is working correctly by:
 * navigating to the following URL in your browser of choice: http://localhost:8080/hello
